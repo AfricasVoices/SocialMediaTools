@@ -51,7 +51,6 @@ class FacebookClient(object):
 
         url = f"{_BASE_URL}{endpoint}"
         response = requests.get(url, params)
-
         if "data" not in response.json():
             log.error(f"Response from Facebook did not contain a 'data' field. "
                       f"The returned data is probably an error message: {response.json()}")
@@ -61,6 +60,11 @@ class FacebookClient(object):
         next_url = response.json().get("paging", {}).get("next")
         while next_url is not None:
             response = requests.get(next_url)
+            if "data" not in response.json():
+                log.error(f"Response from Facebook did not contain a 'data' field. "
+                          f"The returned data is probably an error message: {response.json()}")
+                exit(1)
+
             result.extend(response.json()["data"])
             next_url = response.json()["paging"].get("next")
         return result
