@@ -40,9 +40,8 @@ class FacebookClient(object):
         :param response: Response from a Facebook API to validate.
         :type response: Response
         """
-        assert "data" in response.json(), \
-            f"Response from Facebook did not contain a 'data' field. " \
-            f"The returned data is probably an error message: {response.json()}"
+        assert "error" not in response.json(), \
+            f"Response from Facebook contained an error: {response.json()}"
 
     def _make_get_request(self, endpoint, params=None):
         if params is None:
