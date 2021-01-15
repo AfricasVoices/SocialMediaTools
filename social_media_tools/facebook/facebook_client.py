@@ -32,6 +32,17 @@ class FacebookClient(object):
         """
         return date.astimezone(pytz.utc).isoformat().replace("+00:00", "Z")
 
+    @staticmethod
+    def _validate_response(response):
+        """
+        Ensures the response json contains a 'data' field. Fails with an AssertionError if it does not.
+
+        :param response: Response from a Facebook API to validate.
+        :type response: Response
+        """
+        assert "error" not in response.json(), \
+            f"Response from Facebook contained an error: {response.json()}"
+
     def _make_get_request(self, endpoint, params=None):
         if params is None:
             params = {}
@@ -40,6 +51,8 @@ class FacebookClient(object):
 
         url = f"{_BASE_URL}{endpoint}"
         response = requests.get(url, params)
+
+        self._validate_response(response)
 
         return response.json()
 
@@ -51,19 +64,13 @@ class FacebookClient(object):
 
         url = f"{_BASE_URL}{endpoint}"
         response = requests.get(url, params)
-        if "data" not in response.json():
-            log.error(f"Response from Facebook did not contain a 'data' field. "
-                      f"The returned data is probably an error message: {response.json()}")
-            exit(1)
+        self._validate_response(response)
 
         result = response.json()["data"]
         next_url = response.json().get("paging", {}).get("next")
         while next_url is not None:
             response = requests.get(next_url)
-            if "data" not in response.json():
-                log.error(f"Response from Facebook did not contain a 'data' field. "
-                          f"The returned data is probably an error message: {response.json()}")
-                exit(1)
+            self._validate_response(response)
 
             result.extend(response.json()["data"])
             next_url = response.json()["paging"].get("next")
