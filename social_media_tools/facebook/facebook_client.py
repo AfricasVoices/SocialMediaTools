@@ -63,7 +63,7 @@ class FacebookClient(object):
 
             log.info(f"Retrying up to {max_retries} more times, after {backoff_seconds} seconds...")
             time.sleep(backoff_seconds)
-            cls._auto_retry(f, max_retries - 1, backoff_seconds * 2)
+            return cls._auto_retry(f, max_retries - 1, backoff_seconds * 2)
 
     def _make_get_request(self, endpoint, params=None):
         if params is None:
