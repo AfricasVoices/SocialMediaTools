@@ -1,3 +1,5 @@
+import uuid
+
 from core_data_modules.data_models import validators
 from core_data_modules.logging import Logger
 from core_data_modules.traced_data import TracedData, Metadata
@@ -33,19 +35,19 @@ def clean_post_type(post):
 def convert_facebook_comments_to_traced_data(user, dataset_name, raw_comments, facebook_uuid_table):
     log.info(f"Converting {len(raw_comments)} Facebook comments to TracedData...")
 
-    facebook_uuids = {comment["from"]["id"] for comment in raw_comments}
+    facebook_uuids = {comment["from"]["id"] for comment in raw_comments if "from" in comment}
     facebook_to_uuid_lut = facebook_uuid_table.data_to_uuid_batch(facebook_uuids)
 
     traced_comments = []
-    # Use a placeholder avf facebook id for now, to make the individuals file work until we know if we'll be able
-    # to see Facebook user ids or not.
     for comment in raw_comments:
         comment["created_time"] = isoparse(comment["created_time"]).isoformat()
         validators.validate_utc_iso_string(comment["created_time"])
 
         comment_dict = {
-            "avf_facebook_id": facebook_to_uuid_lut[comment["from"]["id"]]
+            # TODO: Warn if in else case
+            "avf_facebook_id": facebook_to_uuid_lut[comment["from"]["id"]] if "from" in comment else f"avf-message-id-{uuid.uuid4()}"
         }
+
         for k, v in comment.items():
             comment_dict[f"{dataset_name}.{k}"] = v
 
