@@ -1,4 +1,5 @@
 import json
+import time
 
 import pytz
 import requests
@@ -8,6 +9,12 @@ log = Logger(__name__)
 
 _BASE_URL = "https://graph.facebook.com/v8.0"
 _MAX_RESULTS_PER_PAGE = 100  # For paged requests, the maximum number of records to request in each page
+
+
+class FacebookError(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self, message)
 
 
 class FacebookClient(object):
@@ -40,8 +47,23 @@ class FacebookClient(object):
         :param response: Response from a Facebook API to validate.
         :type response: Response
         """
-        assert "error" not in response.json(), \
-            f"Response from Facebook contained an error: {response.json()}"
+        if "error" in response.json():
+            raise FacebookError(response.json())
+
+    @classmethod
+    def _auto_retry(cls, f, max_retries=3, backoff_seconds=1):
+        try:
+            return f()
+        except FacebookError as ex:
+            log.warning(f"Facebook request failed with error {ex.message}")
+
+            if max_retries == 0:
+                log.error(f"Retried the maximum number of times")
+                raise ex
+
+            log.info(f"Retrying up to {max_retries} more times, after {backoff_seconds} seconds...")
+            time.sleep(backoff_seconds)
+            return cls._auto_retry(f, max_retries - 1, backoff_seconds * 2)
 
     def _make_get_request(self, endpoint, params=None):
         if params is None:
@@ -51,7 +73,6 @@ class FacebookClient(object):
 
         url = f"{_BASE_URL}{endpoint}"
         response = requests.get(url, params)
-
         self._validate_response(response)
 
         return response.json()
@@ -89,12 +110,12 @@ class FacebookClient(object):
         :rtype: dict
         """
         log.info(f"Fetching post '{post_id}'...")
-        return self._make_get_request(
+        return self._auto_retry(lambda: self._make_get_request(
             f"/{post_id}",
             {
                 "fields": ",".join(fields)
             }
-        )
+        ))
 
     def get_posts_published_by_page(self, page_id, fields=["attachments", "created_time", "message"],
                                     created_after=None, created_before=None):
@@ -131,10 +152,10 @@ class FacebookClient(object):
         if created_before is not None:
             params["until"] = self._date_to_facebook_time(created_before)
 
-        posts = self._make_paged_get_request(
+        posts = self._auto_retry(lambda: self._make_paged_get_request(
             f"/{page_id}/published_posts",
             params
-        )
+        ))
         log.info(f"Fetched {len(posts)} posts")
 
         return posts
@@ -156,14 +177,14 @@ class FacebookClient(object):
         :rtype: list of dict
         """
         log.info(f"Fetching all comments on post '{post_id}'...")
-        comments = self._make_paged_get_request(
+        comments = self._auto_retry(lambda: self._make_paged_get_request(
             f"/{post_id}/comments",
             {
                 "fields": ",".join(fields),
                 "limit": _MAX_RESULTS_PER_PAGE,
                 "filter": "stream"
             }
-        )
+        ))
         log.info(f"Fetched {len(comments)} comments")
 
         if raw_export_log_file is not None:
@@ -190,9 +211,9 @@ class FacebookClient(object):
         :return: Requested metrics for this post, as returned by the Facebook API.
         :rtype: list of dict
         """
-        return self._make_get_request(
+        return self._auto_retry(lambda: self._make_get_request(
             f"/{post_id}/insights?metric={','.join(metrics)}"
-        )["data"]
+        ))["data"]
 
     def get_metrics_for_post(self, post_id, metrics):
         """
@@ -208,7 +229,7 @@ class FacebookClient(object):
         :return: Requested metrics for this post, in the format metric -> value.
         :rtype: dict of str -> any
         """
-        raw_metrics = self.get_raw_metrics_for_post(post_id, metrics)
+        raw_metrics = self._auto_retry(lambda: self.get_raw_metrics_for_post(post_id, metrics))
 
         cleaned_metrics = dict()
         for m in raw_metrics:
